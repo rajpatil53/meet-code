@@ -2,66 +2,102 @@ package main
 
 import (
 	"encoding/json"
-	"errors"
-	"fmt"
 	"log"
 	"net/http"
-	"os"
-	"time"
+	"slices"
+	"strings"
 
+	"github.com/gin-contrib/cors"
+	"github.com/gin-gonic/gin"
 	"github.com/gorilla/websocket"
 )
+
+type MessageType string
+
+const (
+	// From client:
+	Join            MessageType = "Join"
+	Offer           MessageType = "Offer"
+	Answer          MessageType = "Answer"
+	NewIceCandidate MessageType = "NewIceCandidate"
+	// From server
+	ClientId        MessageType = "ClientId"
+	CreateOffer     MessageType = "CreateOffer"
+	SetOffer        MessageType = "SetOffer"
+	SetAnswer       MessageType = "SetAnswer"
+	AddIceCandidate MessageType = "AddIceCandidate"
+	RemovePeer      MessageType = "RemovePeer"
+)
+
+type Message struct {
+	Type MessageType `json:"type"`
+	Data string      `json:"data"`
+	From string      `json:"from"`
+	To   string      `json:"to"`
+}
 
 var upgrader = websocket.Upgrader{
 	ReadBufferSize:  1024,
 	WriteBufferSize: 1024,
-	CheckOrigin:     func(r *http.Request) bool { return true },
+	CheckOrigin: func(r *http.Request) bool {
+		allowedOrigins := []string{
+			"http://localhost:3000",
+		}
+		origin := r.Header.Get("Origin")
+		if origin == "" {
+			return false
+		}
+		for _, allowedOrigin := range allowedOrigins {
+			if strings.HasPrefix(origin, allowedOrigin) {
+				return true
+			}
+		}
+		return false
+	},
 }
 
-func getRoot(w http.ResponseWriter, r *http.Request) {
-	fmt.Printf("got / request\n")
-	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(map[string]string{"status": "OK"})
+func createRoom(c *gin.Context) {
+	newRoom := Room{
+		Id:         generateId(6),
+		broadcast:  make(chan Message),
+		register:   make(chan *Client),
+		unregister: make(chan *Client),
+		clients:    []*Client{},
+		// Offer: offer,
+	}
+	rooms = append(rooms, &newRoom)
+	go newRoom.start()
+	json.NewEncoder(c.Writer).Encode(newRoom)
 }
 
-func getWs(w http.ResponseWriter, r *http.Request) {
-	conn, err := upgrader.Upgrade(w, r, nil)
+func listRooms(c *gin.Context) {
+	json.NewEncoder(c.Writer).Encode(rooms)
+}
+
+func handleRoom(c *gin.Context) {
+	conn, err := upgrader.Upgrade(c.Writer, c.Request, nil)
 	if err != nil {
 		log.Println(err)
 		return
 	}
-	defer conn.Close()
+	id := c.Param("id")
+	roomIndex := slices.IndexFunc(rooms, func(room *Room) bool { return room.Id == id })
+	room := rooms[roomIndex]
+	client := Client{id: generateId(12), room: room, conn: conn}
+	room.register <- &client
 
-	for {
-		mt, message, err := conn.ReadMessage()
-		if err != nil {
-			log.Println("Read: ", err)
-			break
-		}
-		log.Println("Received: ", mt, message)
-
-		go func() {
-			for now := range time.Tick(time.Second * 3) {
-				err = conn.WriteMessage(mt, []byte(now.String()))
-			}
-			if err != nil {
-				log.Println("Write: ", err)
-			}
-		}()
-	}
-
+	go client.readStream()
 }
 
 func main() {
-	http.HandleFunc("/", getRoot)
-	http.HandleFunc("/ping", getWs)
+	router := gin.Default()
+	corsConfig := cors.DefaultConfig()
+	corsConfig.AllowOrigins = []string{"http://localhost:3000"}
+	router.Use(cors.New(corsConfig))
 
-	err := http.ListenAndServe(":3333", nil)
+	router.POST("/rooms", createRoom)
+	router.GET("/rooms", listRooms)
+	router.GET("/rooms/:id", handleRoom)
 
-	if errors.Is(err, http.ErrServerClosed) {
-		fmt.Printf("server closed\n")
-	} else if err != nil {
-		fmt.Printf("error starting server: %s\n", err)
-		os.Exit(1)
-	}
+	router.Run()
 }
