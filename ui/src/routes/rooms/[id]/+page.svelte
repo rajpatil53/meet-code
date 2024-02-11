@@ -80,13 +80,14 @@
 	}
 
 	async function setupLocalStream() {
-		localStream = await window.navigator.mediaDevices.getUserMedia({ video: true, audio: false });
+		localStream = await window.navigator.mediaDevices.getUserMedia({ video: true, audio: true });
+		const localVideoStream = await window.navigator.mediaDevices.getUserMedia({ video: true });
 
 		const localVideo: HTMLVideoElement | null = document.getElementById(
 			'localVideo'
 		) as HTMLVideoElement;
 		if (localVideo) {
-			localVideo.srcObject = localStream;
+			localVideo.srcObject = localVideoStream;
 		}
 	}
 
