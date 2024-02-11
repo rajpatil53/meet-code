@@ -1,5 +1,5 @@
 <script lang="ts">
-	import { baseApiUrl } from '$lib/constants';
+	import { PUBLIC_HTTP_BASE_URL } from '$env/static/public';
 	import type { Room } from '$lib/types';
 	import type { PageData } from './$types';
 
@@ -7,7 +7,7 @@
 	const { rooms } = data;
 
 	const createRoom = async () => {
-		const resp = await fetch(baseApiUrl + '/rooms', { method: 'POST' });
+		const resp = await fetch(PUBLIC_HTTP_BASE_URL + '/rooms', { method: 'POST' });
 		const newRoom: Room = await resp.json();
 		window.location.pathname = `/rooms/${newRoom.id}`;
 	};

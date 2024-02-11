@@ -2,6 +2,7 @@
 	import type { PeerConnection, Room } from '$lib/types';
 	import { onDestroy, onMount } from 'svelte';
 	import type { PageData } from './$types';
+	import { PUBLIC_WS_BASE_URL } from '$env/static/public';
 
 	export let data: PageData;
 	const { roomId } = data;
@@ -125,7 +126,7 @@
 	}
 
 	async function setupSignalingChannel() {
-		wsChannel = new WebSocket(`ws://localhost:8080/rooms/${roomId}`);
+		wsChannel = new WebSocket(`${PUBLIC_WS_BASE_URL}/rooms/${roomId}`);
 		wsChannel.addEventListener('message', async (event) => {
 			const message: Message = JSON.parse(event.data);
 			console.log('Received msg: ', message);
