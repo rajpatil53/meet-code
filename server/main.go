@@ -29,6 +29,11 @@ const (
 	RemovePeer      MessageType = "RemovePeer"
 )
 
+var allowedOrigins = []string{
+	"http://localhost:3000",
+	"https://meet-code-rajpatil53.vercel.app",
+}
+
 type Message struct {
 	Type MessageType `json:"type"`
 	Data string      `json:"data"`
@@ -40,9 +45,6 @@ var upgrader = websocket.Upgrader{
 	ReadBufferSize:  1024,
 	WriteBufferSize: 1024,
 	CheckOrigin: func(r *http.Request) bool {
-		allowedOrigins := []string{
-			"http://localhost:3000",
-		}
 		origin := r.Header.Get("Origin")
 		if origin == "" {
 			return false
@@ -92,7 +94,7 @@ func handleRoom(c *gin.Context) {
 func main() {
 	router := gin.Default()
 	corsConfig := cors.DefaultConfig()
-	corsConfig.AllowOrigins = []string{"http://localhost:3000"}
+	corsConfig.AllowOrigins = allowedOrigins
 	router.Use(cors.New(corsConfig))
 
 	router.POST("/rooms", createRoom)
