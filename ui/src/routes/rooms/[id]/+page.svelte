@@ -10,6 +10,7 @@
 	let peerConnections: PeerConnection[] = [];
 	let wsChannel: WebSocket;
 	let localStream: MediaStream;
+	let wsConnectionError: string;
 
 	onMount(setupLocalStream);
 
@@ -33,7 +34,8 @@
 		SetOffer = 'SetOffer',
 		SetAnswer = 'SetAnswer',
 		AddIceCandidate = 'AddIceCandidate',
-		RemovePeer = 'RemovePeer'
+		RemovePeer = 'RemovePeer',
+		RoomClosed = 'RoomClosed'
 	}
 
 	interface Message {
@@ -178,6 +180,9 @@
 				case MessageType.RemovePeer:
 					removeConnection(message.data!);
 					break;
+				case MessageType.RoomClosed:
+					window.location.pathname = '/';
+					break;
 				default:
 					break;
 			}
@@ -191,7 +196,8 @@
 			console.log('Closed: ', event);
 		});
 		wsChannel.addEventListener('error', (event) => {
-			console.log('Errot: ', event);
+			console.log('Error: ', event);
+			wsConnectionError = 'Could not join the room.';
 		});
 	}
 
@@ -237,7 +243,12 @@
 </script>
 
 <h1>{roomId}</h1>
-<button class="btn btn-primary" on:click={setupSignalingChannel}>Join</button>
+{#if wsConnectionError}
+	<p>{wsConnectionError}</p>
+	<button class="btn btn-primary" on:click={() => window.history.back()}>Go back</button>
+{:else}
+	<button class="btn btn-primary" on:click={setupSignalingChannel}>Join</button>
+{/if}
 <div class="grid grid-cols-2">
-	<video width="150" id="localVideo" autoplay playsinline controls={false}> </video>
+	<video width="150" id="localVideo" autoplay playsinline controls={false}></video>
 </div>

@@ -13,16 +13,19 @@
 	};
 </script>
 
-<h1>MeetCode</h1>
-<button class="btn btn-primary" on:click={createRoom}>Create room</button>
+<main class="pt-12">
+	<h1>MeetCode</h1>
+	<button class="btn btn-primary" on:click={createRoom}>Create new room</button>
 
-{#if rooms.length > 0}
-	<h2>Open rooms:</h2>
-	<ul>
-		{#each rooms as room}
-			<li>
-				<a href={`/rooms/${room.id}`}>{room.id}</a>
-			</li>
-		{/each}
-	</ul>
-{/if}
+	{#if rooms.length > 0}
+		<h2>Or join existing rooms:</h2>
+		<ul>
+			{#each rooms as room}
+				<li>
+					<a href={`/rooms/${room.id}`}>{room.id}</a>
+					({room.memberCount} participants)
+				</li>
+			{/each}
+		</ul>
+	{/if}
+</main>
