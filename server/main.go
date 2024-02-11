@@ -27,6 +27,7 @@ const (
 	SetAnswer       MessageType = "SetAnswer"
 	AddIceCandidate MessageType = "AddIceCandidate"
 	RemovePeer      MessageType = "RemovePeer"
+	RoomClosed      MessageType = "RoomClosed"
 )
 
 var allowedOrigins = []string{
@@ -77,14 +78,18 @@ func listRooms(c *gin.Context) {
 }
 
 func handleRoom(c *gin.Context) {
+
+	id := c.Param("id")
+	roomIndex := slices.IndexFunc(rooms, func(room *Room) bool { return room.Id == id })
+	if roomIndex == -1 {
+		return
+	}
+	room := rooms[roomIndex]
 	conn, err := upgrader.Upgrade(c.Writer, c.Request, nil)
 	if err != nil {
 		log.Println(err)
 		return
 	}
-	id := c.Param("id")
-	roomIndex := slices.IndexFunc(rooms, func(room *Room) bool { return room.Id == id })
-	room := rooms[roomIndex]
 	client := Client{id: generateId(12), room: room, conn: conn}
 	room.register <- &client
 

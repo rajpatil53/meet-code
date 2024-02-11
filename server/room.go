@@ -1,8 +1,11 @@
 package main
 
 import (
+	"encoding/json"
 	"log"
 	"slices"
+	"strconv"
+	"time"
 )
 
 type Room struct {
@@ -13,19 +16,33 @@ type Room struct {
 	unregister chan *Client
 }
 
+func (r *Room) MarshalJSON() ([]byte, error) {
+	memberCount := len(r.clients)
+	return json.Marshal(map[string]string{
+		"id":          r.Id,
+		"memberCount": strconv.Itoa(memberCount),
+	})
+}
+
 func (r *Room) start() {
 	log.Println("Starting: ", r)
+	// Close the room if no one joins it in 5 mins
+	timer := time.NewTimer(time.Minute * 5)
 	defer func() {
-		close(r.broadcast)
-		close(r.register)
-		close(r.unregister)
+		rooms = slices.DeleteFunc(rooms, func(room *Room) bool { return r == room })
 	}()
 	for {
 		select {
+		case <-timer.C:
+			return
 		case client := <-r.register:
+			timer.Stop()
 			r.clients = append(r.clients, client)
 		case client := <-r.unregister:
-			slices.DeleteFunc(r.clients, func(c *Client) bool { return c == client })
+			r.clients = slices.DeleteFunc(r.clients, func(c *Client) bool { return c == client })
+			if len(r.clients) == 0 {
+				return
+			}
 			for _, c := range r.clients {
 				message := Message{Type: RemovePeer, Data: client.id}
 				c.conn.WriteJSON(message)
