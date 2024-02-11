@@ -246,7 +246,9 @@
 <h1>{roomId}</h1>
 {#if wsConnectionError}
 	<p>{wsConnectionError}</p>
-	<button class="btn btn-primary" on:click={() => window.history.back()}>Go back</button>
+	<button class="btn btn-primary" on:click={() => (window.location.pathname = '/')}>
+		Go to home
+	</button>
 {:else}
 	<button class="btn btn-primary" on:click={setupSignalingChannel}>Join</button>
 {/if}
