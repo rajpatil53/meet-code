@@ -1,25 +1,41 @@
 <script lang="ts">
-	import type { PeerConnection, Room } from '$lib/types';
+	import type { PeerConnection } from '$lib/types';
 	import { onDestroy, onMount } from 'svelte';
-	import type { PageData } from './$types';
 	import { PUBLIC_WS_BASE_URL } from '$env/static/public';
+	import Icon from '@iconify/svelte';
 
-	export let data: PageData;
+	let { data } = $props();
 	const { roomId } = data;
 
-	let peerConnections: PeerConnection[] = [];
+	let containerElement: HTMLDivElement;
+
+	enum WebSocketConnectionState {
+		none,
+		connected,
+		error
+	}
+	const copyLinkMessage = 'Copy meeting link';
+	let tooltipMessage: string = $state(copyLinkMessage);
+	let peerConnections: PeerConnection[] = $state([]);
 	let wsChannel: WebSocket;
 	let localStream: MediaStream;
-	let wsConnectionError: string;
+	let wsConnectionState = $state(WebSocketConnectionState.none);
+	let connectedPeers: string[] = $state([]);
 
 	onMount(setupLocalStream);
 
 	onDestroy(() => {
-		wsChannel?.close();
-		peerConnections.forEach((c) => c.conn.close());
-		localStream.getTracks().forEach(function (track) {
-			track.stop();
-		});
+		disconnect();
+	});
+
+	$effect(() => {
+		let videoWidth: number;
+		if (connectedPeers.length == 0) {
+			videoWidth = containerElement?.clientWidth;
+		} else {
+			videoWidth = containerElement?.clientWidth / 2;
+		}
+		document.querySelectorAll('video').forEach((v) => (v.width = videoWidth - 24));
 	});
 
 	enum MessageType {
@@ -55,24 +71,23 @@
 	const newCandidates: RTCIceCandidate[] = [];
 
 	function getPeerConnectionFor(peerId: string): RTCPeerConnection {
-		console.log(peerConnections);
 		const peerConnection = peerConnections.find((c) => c.peerId == peerId);
 		if (!peerConnection) {
 			const newConnection = setupPeerConnection(peerId);
 			console.log('Created new connection for: ', peerId);
 			peerConnections.push(newConnection);
 			peerConnections = peerConnections;
-			console.log(peerConnections);
 			return newConnection.conn;
 		}
 		return peerConnection!.conn;
 	}
 
 	function removeConnection(peerId: string) {
-		console.log('Removing: ', peerId);
 		const connection = peerConnections.find((c) => c.peerId == peerId);
 		if (connection) {
+			console.log('Closing: ', peerId);
 			connection.conn.close();
+			connectedPeers = connectedPeers.filter((peer) => peer != peerId);
 			peerConnections = peerConnections.filter((c) => c.peerId === connection.peerId);
 			const video = document.querySelector(`video#${peerId}`);
 			video?.remove();
@@ -80,14 +95,13 @@
 	}
 
 	async function setupLocalStream() {
-		localStream = await window.navigator.mediaDevices.getUserMedia({ video: true, audio: true });
-		const localVideoStream = await window.navigator.mediaDevices.getUserMedia({ video: true });
+		localStream = await window.navigator.mediaDevices.getUserMedia({ video: true, audio: false });
 
 		const localVideo: HTMLVideoElement | null = document.getElementById(
 			'localVideo'
 		) as HTMLVideoElement;
 		if (localVideo) {
-			localVideo.srcObject = localVideoStream;
+			localVideo.srcObject = new MediaStream(localStream.getVideoTracks());
 		}
 	}
 
@@ -102,11 +116,10 @@
 		remoteVideo.autoplay = true;
 		remoteVideo.playsInline = true;
 		remoteVideo.controls = false;
-		remoteVideo.width = 150;
 		if (remoteVideo) {
 			remoteVideo.srcObject = remoteStream;
 		}
-		localVideo.parentElement?.appendChild(remoteVideo);
+		localVideo.parentElement?.prepend(remoteVideo);
 		return remoteStream;
 	}
 
@@ -120,7 +133,6 @@
 			});
 		} else {
 			if (peerConnection.remoteDescription) {
-				console.log('Adding new ice candidate', candidate);
 				await peerConnection.addIceCandidate(candidate);
 			} else {
 				newCandidates.push(candidate);
@@ -139,13 +151,11 @@
 					peerConnection = getPeerConnectionFor(message.from!);
 					const offer = await peerConnection.createOffer();
 					await peerConnection.setLocalDescription(offer);
-					console.log('Sending Offer', peerConnection);
 					const offerMessage: Message = {
 						type: MessageType.Offer,
 						data: JSON.stringify(offer),
 						to: message.from
 					};
-					console.log('offerMessage', offerMessage);
 					wsChannel.send(JSON.stringify(offerMessage));
 					break;
 				case MessageType.SetOffer:
@@ -153,26 +163,21 @@
 					peerConnection.setRemoteDescription(new RTCSessionDescription(JSON.parse(message.data!)));
 					const answer = await peerConnection.createAnswer();
 					await peerConnection.setLocalDescription(answer);
-					console.log('Setting Answer', peerConnection);
 					const answerMessage: Message = {
 						type: MessageType.Answer,
 						data: JSON.stringify(answer),
 						to: message.from
 					};
-					console.log('answerMessage', answerMessage);
 					wsChannel.send(JSON.stringify(answerMessage));
 					break;
 				case MessageType.SetAnswer:
 					peerConnection = getPeerConnectionFor(message.from!);
-					console.log('before remoteDescription', peerConnection.remoteDescription);
 					if (peerConnection.signalingState == 'have-local-offer') {
 						await peerConnection.setRemoteDescription(
 							new RTCSessionDescription(JSON.parse(message.data!))
 						);
-						console.log('Setting Answer', peerConnection);
 						await addNewIceCandidate(peerConnection);
 					}
-					console.log('after remoteDescription', peerConnection.remoteDescription);
 					break;
 				case MessageType.AddIceCandidate:
 					peerConnection = getPeerConnectionFor(message.from!);
@@ -192,30 +197,36 @@
 			console.log('Opened: ', event);
 			const joinMessage: Message = { type: MessageType.Join };
 			wsChannel.send(JSON.stringify(joinMessage));
+			wsConnectionState = WebSocketConnectionState.connected;
 		});
 		wsChannel.addEventListener('close', (event) => {
 			console.log('Closed: ', event);
+			wsConnectionState = WebSocketConnectionState.none;
 		});
 		wsChannel.addEventListener('error', (event) => {
 			console.log('Error: ', event);
-			wsConnectionError = 'Could not join the room.';
+			wsConnectionState = WebSocketConnectionState.error;
 		});
 	}
 
 	function setupPeerConnection(peerId: string): PeerConnection {
 		const rtcPeerConnection = new RTCPeerConnection(servers);
 		const remoteStream = setupRemoteStream(peerId);
-		console.log('Setting up peerConnection', rtcPeerConnection);
 
-		rtcPeerConnection.onconnectionstatechange = (e) =>
-			console.log('connectionState', rtcPeerConnection.connectionState, rtcPeerConnection);
+		rtcPeerConnection.onconnectionstatechange = (e) => {
+			console.log('connectionState', rtcPeerConnection.connectionState);
+			if (rtcPeerConnection.connectionState == 'connected') {
+				connectedPeers.push(peerId);
+				connectedPeers = connectedPeers;
+			}
+		};
 		rtcPeerConnection.onicegatheringstatechange = (e) =>
-			console.log('iceGatheringState', rtcPeerConnection.iceGatheringState, rtcPeerConnection);
+			console.log('iceGatheringState', rtcPeerConnection.iceGatheringState);
 		rtcPeerConnection.oniceconnectionstatechange = (e) => {
-			console.log('iceConnectionState', rtcPeerConnection.iceConnectionState, rtcPeerConnection);
+			console.log('iceConnectionState', rtcPeerConnection.iceConnectionState);
 		};
 		rtcPeerConnection.onsignalingstatechange = (e) =>
-			console.log('signalingState', rtcPeerConnection.signalingState, rtcPeerConnection);
+			console.log('signalingState', rtcPeerConnection.signalingState);
 
 		localStream.getTracks().forEach((track) => {
 			rtcPeerConnection.addTrack(track, localStream);
@@ -229,7 +240,6 @@
 
 		rtcPeerConnection.onicecandidate = (event) => {
 			if (event.candidate) {
-				console.log('New candidate', event.candidate);
 				rtcPeerConnection.addIceCandidate;
 				const newIceCandidateMessage: Message = {
 					type: MessageType.NewIceCandidate,
@@ -241,17 +251,64 @@
 
 		return { peerId: peerId, conn: rtcPeerConnection, remoteStream: remoteStream };
 	}
+
+	function copyLink() {
+		navigator.clipboard.writeText(
+			window.location.protocol + '//' + window.location.host + `/rooms/${roomId}`
+		);
+		setTimeout(() => {
+			tooltipMessage = copyLinkMessage;
+		}, 3000);
+		tooltipMessage = 'URL copied!';
+	}
+
+	function disconnect() {
+		wsChannel?.close();
+		peerConnections.forEach((c) => c.conn.close());
+		localStream.getTracks().forEach(function (track) {
+			track.stop();
+		});
+	}
+
+	function leaveMeeting() {
+		disconnect();
+		window.location.pathname = '/';
+	}
 </script>
 
-<h1>{roomId}</h1>
-{#if wsConnectionError}
-	<p>{wsConnectionError}</p>
+<div class="my-8 flex items-center gap-2">
+	<h1 class="my-0">Meeting ID: {roomId}</h1>
+	<button on:click={(e) => copyLink()} class="tooltip" data-tip={tooltipMessage}>
+		<Icon icon="radix-icons:copy" class="text-2xl" />
+	</button>
+</div>
+{#if wsConnectionState == WebSocketConnectionState.error}
+	<p>Could not join the room.</p>
 	<button class="btn btn-primary" on:click={() => (window.location.pathname = '/')}>
 		Go to home
 	</button>
+{:else if wsConnectionState == WebSocketConnectionState.none}
+	<button class="btn btn-primary" on:click={setupSignalingChannel}>Join meeting</button>
 {:else}
-	<button class="btn btn-primary" on:click={setupSignalingChannel}>Join</button>
+	<div class="flex items-center gap-4">
+		<button class="btn btn-error" on:click={leaveMeeting}>Leave meeting</button>
+		{#if connectedPeers.length == 0}
+			<p>Waiting for other people to join...</p>
+		{/if}
+	</div>
 {/if}
-<div class="grid grid-cols-2">
-	<video width="150" id="localVideo" autoplay playsinline controls={false}></video>
+<div
+	class="preview-container flex w-full flex-wrap items-center justify-center gap-6"
+	class:grid-cols-2={connectedPeers.length > 0}
+	bind:this={containerElement}
+>
+	<video
+		class:w-full={connectedPeers.length == 0}
+		id="localVideo"
+		autoplay
+		playsinline
+		controls={false}
+	>
+		<track kind="captions" />
+	</video>
 </div>

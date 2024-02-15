@@ -2,7 +2,7 @@
 A collaborative code editor with P2P connections.
 
 ## TODO
-- [ ] Fix video layout
+- [x] Fix video layout
 - [ ] Add buttons to toggle video/audio
 - [ ] Add screen sharing
 - [ ] Add text messages
