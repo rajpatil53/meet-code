@@ -41,7 +41,7 @@ func (r *Room) start() {
 		case client := <-r.unregister:
 			r.clients = slices.DeleteFunc(r.clients, func(c *Client) bool { return c == client })
 			if len(r.clients) == 0 {
-				return
+				timer.Reset(time.Minute * 5)
 			}
 			for _, c := range r.clients {
 				message := Message{Type: RemovePeer, Data: client.id}
@@ -57,20 +57,18 @@ func (r *Room) start() {
 			switch message.Type {
 			case Join:
 				if len(r.clients) > 1 {
-					index := r.indexOf(message.From)
+					index := r.indexOfClient(message.From)
 					for _, client := range r.clients[:index] {
 						message := Message{Type: CreateOffer, From: message.From}
 						client.conn.WriteJSON(message)
 					}
 				}
 			case Offer:
-				index := r.indexOf(message.To)
-				client := r.clients[index]
+				client := r.getClient(message.To)
 				message := Message{Type: SetOffer, Data: message.Data, From: message.From}
 				client.conn.WriteJSON(message)
 			case Answer:
-				index := r.indexOf(message.To)
-				client := r.clients[index]
+				client := r.getClient(message.To)
 				message := Message{Type: SetAnswer, Data: message.Data, From: message.From}
 				client.conn.WriteJSON(message)
 			case NewIceCandidate:
@@ -86,8 +84,13 @@ func (r *Room) start() {
 	}
 }
 
-func (r *Room) indexOf(clientId string) int {
+func (r *Room) indexOfClient(clientId string) int {
 	return slices.IndexFunc(r.clients, func(c *Client) bool { return c.id == clientId })
+}
+
+func (r *Room) getClient(clientId string) *Client {
+	clientIndex := r.indexOfClient(clientId)
+	return r.clients[clientIndex]
 }
 
 var rooms []*Room = []*Room{}
