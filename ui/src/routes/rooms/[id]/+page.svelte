@@ -4,12 +4,16 @@
 	import { browser } from '$app/environment';
 	import { Peer } from '$lib/Peer';
 	import { type SignalingChannel } from '$lib/channels/SignalingChannel.js';
+	import { useMediaQuery } from '$lib/stores/useMediaQuery.js';
+	import Icon from '@iconify/svelte';
 
 	let { data } = $props();
 	const { roomId } = data;
 
 	let containerElement: HTMLDivElement;
 
+	let videoOn = $state(true);
+	let audioOn = $state(true);
 	let isReady = $state(false);
 	let hasError = $state(false);
 	let peer: Peer | undefined = $state();
@@ -50,6 +54,14 @@
 		});
 	});
 
+	$effect(() => {
+		localStream?.getAudioTracks().forEach((track) => (track.enabled = audioOn));
+	});
+
+	$effect(() => {
+		localStream?.getVideoTracks().forEach((track) => (track.enabled = videoOn));
+	});
+
 	async function connect() {
 		if (browser) {
 			const { WebsocketSignalingChannel } = await import(
@@ -78,23 +90,53 @@
 
 {#if peer && connectedPeers.length == 0}
 	<div class="toast toast-top toast-end">
-		<div class="alert alert-success">
+		<div class="alert alert-info">
 			<span>Waiting for other people to join...</span>
+		</div>
+	</div>
+{/if}
+{#if hasError}
+	<div class="toast toast-top toast-end">
+		<div class="alert alert-error">
+			<span>Could not join the room.</span>
 		</div>
 	</div>
 {/if}
 
 <div
-	class="alert absolute bottom-0 left-1/2 z-10 my-8 flex w-fit -translate-x-1/2 items-center gap-4"
+	class="alert absolute bottom-0 left-1/2 z-10 my-8 flex w-max -translate-x-1/2 items-center gap-4"
 >
-	<p class="my-0">Meeting ID: {roomId}</p>
-	<CopyTextButton
-		text={browser
-			? window.location.protocol + '//' + window.location.host + `/rooms/${roomId}`
-			: ''}
-	/>
+	<div class="flex gap-2">
+		<p class="my-0 whitespace-nowrap">Meeting ID: {roomId}</p>
+		<CopyTextButton
+			text={browser
+				? window.location.protocol + '//' + window.location.host + `/rooms/${roomId}`
+				: ''}
+		/>
+	</div>
+	<div>
+		<button
+			class="btn btn-circle swap"
+			class:swap-active={videoOn}
+			class:btn-neutral={videoOn}
+			class:btn-error={!videoOn}
+			on:click={() => (videoOn = !videoOn)}
+		>
+			<Icon icon="lucide:video" class="swap-on text-2xl" />
+			<Icon icon="lucide:video-off" class="swap-off text-2xl" />
+		</button>
+		<button
+			class="btn btn-circle swap"
+			class:swap-active={audioOn}
+			class:btn-neutral={audioOn}
+			class:btn-error={!audioOn}
+			on:click={() => (audioOn = !audioOn)}
+		>
+			<Icon icon="lucide:mic" class="swap-on text-2xl" />
+			<Icon icon="lucide:mic-off" class="swap-off text-2xl" />
+		</button>
+	</div>
 	{#if hasError}
-		<p>Could not join the room.</p>
 		<button class="btn btn-primary" on:click={() => (window.location.pathname = '/')}>
 			Go to home
 		</button>
@@ -107,7 +149,7 @@
 	{/if}
 </div>
 <div
-	class="preview-container flex h-screen w-full flex-wrap items-center justify-center gap-6 py-4"
+	class="preview-container flex h-screen w-full flex-wrap items-center justify-center gap-2 py-4"
 	bind:this={containerElement}
 >
 	<div class="video-container">

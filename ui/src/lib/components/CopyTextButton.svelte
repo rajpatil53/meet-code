@@ -15,5 +15,5 @@
 </script>
 
 <button on:click={(e) => copyLink()} class="tooltip" data-tip={tooltipMessage}>
-	<Icon icon="radix-icons:copy" class="text-2xl" />
+	<Icon icon="lucide:copy" class="text-2xl" />
 </button>
