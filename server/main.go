@@ -16,18 +16,12 @@ type MessageType string
 
 const (
 	// From client:
-	Join            MessageType = "Join"
-	Offer           MessageType = "Offer"
-	Answer          MessageType = "Answer"
-	NewIceCandidate MessageType = "NewIceCandidate"
+	Join        MessageType = "Join"
+	Negotiation MessageType = "Negotiation"
+
 	// From server
-	ClientId        MessageType = "ClientId"
-	CreateOffer     MessageType = "CreateOffer"
-	SetOffer        MessageType = "SetOffer"
-	SetAnswer       MessageType = "SetAnswer"
-	AddIceCandidate MessageType = "AddIceCandidate"
-	RemovePeer      MessageType = "RemovePeer"
-	RoomClosed      MessageType = "RoomClosed"
+	RemovePeer MessageType = "RemovePeer"
+	RoomClosed MessageType = "RoomClosed"
 )
 
 var allowedOrigins = []string{
@@ -35,11 +29,16 @@ var allowedOrigins = []string{
 	"https://meet-code-rajpatil53.vercel.app",
 }
 
+type NegotiationData struct {
+	Sdp       string `json:"sdp"`
+	Candidate string `json:"candidate"`
+}
+
 type Message struct {
-	Type MessageType `json:"type"`
-	Data string      `json:"data"`
-	From string      `json:"from"`
-	To   string      `json:"to"`
+	Type MessageType     `json:"type"`
+	Data NegotiationData `json:"data"`
+	From string          `json:"from"`
+	To   string          `json:"to"`
 }
 
 var upgrader = websocket.Upgrader{

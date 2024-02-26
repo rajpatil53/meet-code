@@ -44,7 +44,7 @@ func (r *Room) start() {
 				timer.Reset(time.Minute * 5)
 			}
 			for _, c := range r.clients {
-				message := Message{Type: RemovePeer, Data: client.id}
+				message := Message{Type: RemovePeer, From: client.id}
 				c.conn.WriteJSON(message)
 				// select {
 				// case client.send <- message:
@@ -59,26 +59,14 @@ func (r *Room) start() {
 				if len(r.clients) > 1 {
 					index := r.indexOfClient(message.From)
 					for _, client := range r.clients[:index] {
-						message := Message{Type: CreateOffer, From: message.From}
+						message := Message{Type: Negotiation, From: message.From}
 						client.conn.WriteJSON(message)
 					}
 				}
-			case Offer:
+			case Negotiation:
 				client := r.getClient(message.To)
-				message := Message{Type: SetOffer, Data: message.Data, From: message.From}
+				message := Message{Type: Negotiation, Data: message.Data, From: message.From}
 				client.conn.WriteJSON(message)
-			case Answer:
-				client := r.getClient(message.To)
-				message := Message{Type: SetAnswer, Data: message.Data, From: message.From}
-				client.conn.WriteJSON(message)
-			case NewIceCandidate:
-				for _, client := range r.clients {
-					if client.id == message.From {
-						continue
-					}
-					message := Message{Type: AddIceCandidate, Data: message.Data, From: message.From}
-					client.conn.WriteJSON(message)
-				}
 			}
 		}
 	}
