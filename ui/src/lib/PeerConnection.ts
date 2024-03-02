@@ -1,5 +1,4 @@
 import type { Peer } from './Peer';
-import { Message, MessageType } from './channels/SignalingChannel';
 
 const servers: RTCConfiguration = {
 	iceServers: [
@@ -10,87 +9,140 @@ const servers: RTCConfiguration = {
 };
 
 export class PeerConnection {
+	peerId: string;
 	private _owner: Peer;
 	private _conn: RTCPeerConnection;
-	private _remoteStream: MediaStream;
+	private _remoteStreams: MediaStream[];
 	private _iceCandidates: RTCIceCandidate[];
+	private _negotiating: boolean;
+	private _senderMap: Map<MediaStreamTrack, Map<MediaStream, RTCRtpSender>>;
 
 	constructor(owner: Peer, peerId: string) {
+		this._senderMap = new Map();
+		this._remoteStreams = [];
+		this.peerId = peerId;
 		this._owner = owner;
 		this._conn = new RTCPeerConnection(servers);
-		this._remoteStream = this.setupRemoteStream(peerId);
 		this._iceCandidates = [];
 		this.setupConnectionListeners();
-		this.addTracks(this._owner.localStream);
-	}
-
-	get conn() {
-		return this._conn;
+		this.addStream(this._owner.stream);
+		this._negotiating = false;
 	}
 
 	private setupConnectionListeners() {
 		this._conn.onconnectionstatechange = () => {
 			console.log('connectionState', this._conn.connectionState);
+			if (this._conn.connectionState == 'connected') {
+				if (this._owner.screenStream) {
+					this.addStream(this._owner.screenStream);
+				}
+				this._negotiating = false;
+			}
 		};
 		this._conn.onicegatheringstatechange = () =>
 			console.log('iceGatheringState', this._conn.iceGatheringState);
 		this._conn.oniceconnectionstatechange = () => {
 			console.log('iceConnectionState', this._conn.iceConnectionState);
 		};
-		this._conn.onsignalingstatechange = () =>
+		this._conn.onsignalingstatechange = () => {
 			console.log('signalingState', this._conn.signalingState);
+			if (this._conn.signalingState == 'stable') {
+				this._negotiating = false;
+			}
+		};
 		this._conn.ontrack = (event) => {
-			event.streams[0].getTracks().forEach((track) => {
-				this._remoteStream.addTrack(track);
+			console.log('Received track:', event.track);
+			event.streams.forEach((stream) => {
+				if (!this._remoteStreams.some((s) => s.id == stream.id)) {
+					this._remoteStreams.push(stream);
+					this._owner.handleIncomingStream({
+						source: this.peerId,
+						stream,
+						type: this._remoteStreams.length > 1 ? 'screen' : 'video'
+					});
+					stream.addEventListener('removetrack', ({ track }) => {
+						console.log(`${track.kind} track was removed.`);
+						if (!stream.getTracks().length) {
+							this._remoteStreams = this._remoteStreams.filter((s) => s.id != stream.id);
+							this._owner.handleIncomingStreamEnded({
+								source: this.peerId,
+								stream,
+								type: 'screen'
+							});
+						}
+					});
+				}
 			});
 		};
+		this._conn.onnegotiationneeded = (ev) => {
+			console.log('onnegotiationneeded', this._negotiating, ev, this._conn);
+			if (this._negotiating) return;
 
+			this._negotiating = true;
+			this._owner.handleCreateOffer(this);
+		};
 		this._conn.onicecandidate = (event) => {
 			if (event.candidate) {
-				this._conn.addIceCandidate;
-				const newIceCandidateMessage: Message = {
-					type: MessageType.NewIceCandidate,
-					data: JSON.stringify(event.candidate)
-				};
-				this._owner.sendMessage(newIceCandidateMessage);
+				this._owner.handleNewIceCandidate(event.candidate, this.peerId);
 			}
 		};
 	}
 
-	addTracks(stream: MediaStream) {
-		stream.getTracks().forEach((track) => {
-			this._conn.addTrack(track, stream);
-		});
+	async createOffer() {
+		this._negotiating = true;
+		const offer = await this._conn.createOffer();
+		await this._conn.setLocalDescription(offer);
+		return offer;
 	}
 
-	setupRemoteStream(peerId: string): MediaStream {
-		const remoteStream = new MediaStream();
+	async createAnswer(offer: RTCSessionDescription) {
+		this._negotiating = true;
+		this._conn.setRemoteDescription(offer);
+		const answer = await this._conn.createAnswer();
+		await this._conn.setLocalDescription(answer);
+		return answer;
+	}
 
-		const localVideo: HTMLVideoElement | null = document.getElementById(
-			'localVideo'
-		) as HTMLVideoElement;
-		const remoteVideoContainer = document.createElement('div');
-		remoteVideoContainer.classList.add('video-container');
-		const remoteVideo = document.createElement('video');
-		remoteVideo.id = peerId;
-		remoteVideo.autoplay = true;
-		remoteVideo.playsInline = true;
-		remoteVideo.controls = false;
-		console.log('remoteVideo', remoteVideo.width, remoteVideo.height);
-		remoteVideo.classList.add('not-prose');
-		if (remoteVideo) {
-			remoteVideo.srcObject = remoteStream;
+	async setAnswer(answer: RTCSessionDescription) {
+		if (this._conn.signalingState == 'have-local-offer') {
+			await this._conn.setRemoteDescription(answer);
 		}
-		remoteVideoContainer.appendChild(remoteVideo);
-		localVideo.parentElement?.parentElement?.prepend(remoteVideoContainer);
-		return remoteStream;
+		await this.addNewIceCandidate();
+	}
+	addTrack(track: MediaStreamTrack, stream: MediaStream) {
+		const submap: Map<MediaStream, RTCRtpSender> = this._senderMap.get(track) || new Map();
+		let sender = submap.get(stream);
+
+		if (!sender) {
+			sender = this._conn.addTrack(track, stream);
+			submap.set(stream, sender);
+			this._senderMap.set(track, submap);
+		}
+	}
+	removeTrack(track: MediaStreamTrack, stream: MediaStream) {
+		const submap: Map<MediaStream, RTCRtpSender> = this._senderMap.get(track) || new Map();
+		const sender = submap.get(stream);
+
+		if (sender) {
+			this._conn.removeTrack(sender);
+			submap.delete(stream);
+			this._senderMap.set(track, submap);
+		}
+	}
+
+	addStream(stream: MediaStream) {
+		stream.getTracks().forEach((track) => this.addTrack(track, stream));
+	}
+
+	removeStream(stream: MediaStream) {
+		stream.getTracks().forEach((track) => this.removeTrack(track, stream));
 	}
 
 	async addNewIceCandidate(candidate?: RTCIceCandidate) {
 		if (!candidate) {
-			this._iceCandidates.forEach((c) => {
-				this.conn.addIceCandidate(c);
-			});
+			for (const c of this._iceCandidates) {
+				await this._conn.addIceCandidate(c);
+			}
 			this._iceCandidates = [];
 		} else {
 			if (this._conn.remoteDescription) {
@@ -99,5 +151,9 @@ export class PeerConnection {
 				this._iceCandidates.push(candidate);
 			}
 		}
+	}
+
+	close() {
+		this._conn.close();
 	}
 }

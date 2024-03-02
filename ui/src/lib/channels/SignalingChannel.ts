@@ -1,15 +1,9 @@
 export enum MessageType {
 	// From client
 	Join = 'Join',
-	Offer = 'Offer',
-	Answer = 'Answer',
-	NewIceCandidate = 'NewIceCandidate',
+	Negotiation = 'Negotiation',
 
 	// From server
-	CreateOffer = 'CreateOffer',
-	SetOffer = 'SetOffer',
-	SetAnswer = 'SetAnswer',
-	AddIceCandidate = 'AddIceCandidate',
 	RemovePeer = 'RemovePeer',
 	RoomClosed = 'RoomClosed'
 }
@@ -17,7 +11,10 @@ export enum MessageType {
 export class Message {
 	type: MessageType;
 	from?: string;
-	data?: string;
+	data?: {
+		sdp?: string;
+		candidate?: string;
+	};
 	to?: string;
 
 	constructor({
@@ -27,7 +24,10 @@ export class Message {
 		to
 	}: {
 		type: MessageType;
-		data?: string;
+		data?: {
+			sdp?: string;
+			candidate?: string;
+		};
 		from?: string;
 		to?: string;
 	}) {
