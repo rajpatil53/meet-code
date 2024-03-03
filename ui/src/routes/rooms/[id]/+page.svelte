@@ -6,7 +6,7 @@
 	import { type SignalingChannel } from '$lib/channels/SignalingChannel';
 	import Icon from '@iconify/svelte';
 	import Draggable from '$lib/components/Draggable.svelte';
-	import { addFloatingWindowStyles, createVideoWindow } from '$lib/DomUtils.js';
+	import { addFloatingWindowStyles, createVideoWindow } from '$lib/domUtils';
 
 	let { data } = $props();
 	const { roomId } = data;
