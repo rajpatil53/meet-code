@@ -27,6 +27,7 @@ const (
 var allowedOrigins = []string{
 	"http://localhost:3000",
 	"https://meet-code-rajpatil53.vercel.app",
+	"https://meetcode.rajp.dev",
 }
 
 type NegotiationData struct {
