@@ -1,4 +1,5 @@
 import type { Peer } from './Peer';
+import type { DataMessage } from './types';
 
 const servers: RTCConfiguration = {
 	iceServers: [
@@ -43,7 +44,7 @@ export class PeerConnection {
 			console.log('Opened data channel:', e);
 			this._owner.stream.getAudioTracks().forEach((track) => {
 				if (!track.enabled) {
-					this.sendDataMessage('muteaudio');
+					this._owner.muteAudio();
 				}
 			});
 		});
@@ -52,12 +53,16 @@ export class PeerConnection {
 
 	private _handleDataMessage(event: MessageEvent) {
 		console.log('message data channel:', event);
-		switch (event.data) {
-			case 'muteaudio':
+		const message: DataMessage = JSON.parse(event.data);
+		switch (message.type) {
+			case 'mute':
 				this._owner.handleMuteAudio(this.peerId);
 				break;
-			case 'unmuteaudio':
+			case 'unmute':
 				this._owner.handleUnmuteAudio(this.peerId);
+				break;
+			case 'chat':
+				this._owner.handleChatMessage({ sender: this.peerId, text: message.message! });
 				break;
 			default:
 				console.log('Message not handled:', event);

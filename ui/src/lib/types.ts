@@ -11,3 +11,19 @@ export interface PeerConnection {
 	conn: RTCPeerConnection;
 	remoteStream: MediaStream;
 }
+
+export interface DataMessage {
+	type: 'mute' | 'unmute' | 'chat';
+	message?: string;
+}
+
+export interface ChatMessage {
+	sender: string;
+	text: string;
+}
+
+export interface IncomingStream {
+	stream: MediaStream;
+	source: string;
+	type: 'video' | 'screen';
+}

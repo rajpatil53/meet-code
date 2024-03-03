@@ -1,16 +1,15 @@
 import { PeerConnection } from './PeerConnection';
 import { Message, MessageType, type SignalingChannel } from './channels/SignalingChannel';
+import { removeVideo } from './domUtils';
+import type { ChatMessage, DataMessage, IncomingStream } from './types';
 
-export interface IncomingStream {
-	stream: MediaStream;
-	source: string;
-	type: 'video' | 'screen';
-}
 export interface PeerEventMap {
+	connectionchanged: Event;
 	streamadded: CustomEvent<IncomingStream>;
 	streamremoved: CustomEvent<IncomingStream>;
 	muted: CustomEvent<string>;
 	unmuted: CustomEvent<string>;
+	chat: CustomEvent<ChatMessage>;
 }
 
 export interface PeerEventTarget extends EventTarget {
@@ -43,6 +42,7 @@ export class Peer extends typedEventTarget {
 	private _connections: { [peerId: string]: PeerConnection };
 	screenStream: MediaStream | null;
 	stream: MediaStream;
+	id?: string;
 
 	constructor(channel: SignalingChannel, stream: MediaStream) {
 		super();
@@ -71,7 +71,7 @@ export class Peer extends typedEventTarget {
 			return this._connections[peerId];
 		}
 		this._connections[peerId] = new PeerConnection(this, peerId);
-		this.dispatchEvent(new Event('connect'));
+		this.dispatchEvent(new Event('connectionchanged'));
 		return this._connections[peerId];
 	}
 
@@ -152,9 +152,8 @@ export class Peer extends typedEventTarget {
 			console.log('Closing: ', peerConnection.peerId);
 			peerConnection.close();
 			delete this._connections[peerConnection.peerId];
-			const video = document.querySelector(`video#${peerConnection.peerId}`);
-			video?.parentElement?.remove();
-			this.dispatchEvent(new Event('connect'));
+			removeVideo(peerConnection.peerId);
+			this.dispatchEvent(new Event('connectionchanged'));
 		}
 	}
 
@@ -212,10 +211,18 @@ export class Peer extends typedEventTarget {
 	}
 
 	muteAudio() {
-		Object.values(this._connections).forEach((c) => c.sendDataMessage('muteaudio'));
+		const data: DataMessage = { type: 'mute' };
+		Object.values(this._connections).forEach((c) => c.sendDataMessage(JSON.stringify(data)));
 	}
 	unmuteAudio() {
-		Object.values(this._connections).forEach((c) => c.sendDataMessage('unmuteaudio'));
+		const data: DataMessage = { type: 'unmute' };
+		Object.values(this._connections).forEach((c) => c.sendDataMessage(JSON.stringify(data)));
+	}
+
+	sendChatMessage(text: string) {
+		const data: DataMessage = { type: 'chat', message: text };
+		Object.values(this._connections).forEach((c) => c.sendDataMessage(JSON.stringify(data)));
+		this.handleChatMessage({ sender: 'me', text });
 	}
 
 	handleMuteAudio(peerId: string) {
@@ -223,5 +230,9 @@ export class Peer extends typedEventTarget {
 	}
 	handleUnmuteAudio(peerId: string) {
 		this.dispatchEvent(new CustomEvent<string>('unmuted', { detail: peerId }));
+	}
+
+	handleChatMessage(message: ChatMessage) {
+		this.dispatchEvent(new CustomEvent<ChatMessage>('chat', { detail: message }));
 	}
 }

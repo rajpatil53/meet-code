@@ -1,7 +1,8 @@
 export function createVideoWindow(id: string, stream?: MediaStream) {
 	const videoContainer = document.createElement('div');
 	const videoWrapper = document.createElement('div');
-	videoWrapper.classList.add('h-auto', 'w-full', 'relative');
+	// TODO: fix overflowing issue with videoWrapper
+	videoWrapper.classList.add('relative', 'video-wrapper');
 	videoContainer.classList.add('video-container');
 	if (id == 'screen') {
 		videoContainer.classList.add('screen-active');
@@ -27,6 +28,11 @@ export function addFloatingWindowStyles(containerElement: HTMLElement) {
 	containerElement.classList.add('join-item');
 	containerElement.style.width = '200px';
 	containerElement.style.height = 'auto';
+	containerElement.querySelectorAll('.video-wrapper').forEach((v) => {
+		(v as HTMLDivElement).classList.add('join-item');
+		(v as HTMLDivElement).style.width = '200px';
+		(v as HTMLDivElement).style.height = 'auto';
+	});
 }
 
 function createMuteIndicator() {
@@ -48,4 +54,9 @@ function createMuteIndicator() {
 		</g>
 	</svg>`;
 	return muteIndicator;
+}
+
+export function removeVideo(id: string) {
+	const screenVideo: HTMLVideoElement | null = document.getElementById(id) as HTMLVideoElement;
+	screenVideo?.parentElement?.parentElement?.remove();
 }

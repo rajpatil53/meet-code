@@ -6,7 +6,10 @@
 	import { type SignalingChannel } from '$lib/channels/SignalingChannel';
 	import Icon from '@iconify/svelte';
 	import Draggable from '$lib/components/Draggable.svelte';
-	import { addFloatingWindowStyles, createVideoWindow } from '$lib/domUtils';
+	import { addFloatingWindowStyles, createVideoWindow, removeVideo } from '$lib/domUtils';
+	import SideDrawer from '$lib/components/SideDrawer.svelte';
+	import Chat from './Chat.svelte';
+	import type { ChatMessage } from '$lib/types';
 
 	let { data } = $props();
 	const { roomId } = data;
@@ -17,6 +20,7 @@
 
 	let videoOn = $state(true);
 	let audioOn = $state(true);
+	let chatOn = $state(false);
 	let floatingContainerPosition = $state({ x: 0, y: 0 });
 	let screenShareOn = $state(false);
 	let screenShareStream: MediaStream | null = $state(null);
@@ -27,6 +31,7 @@
 	let connectedPeers: string[] = $state([]);
 	let signalingChannel: SignalingChannel | undefined = $state();
 	let localStream: MediaStream;
+	let chatMessages: ChatMessage[] = $state([]);
 
 	onMount(async () => {
 		localStream = await window.navigator.mediaDevices.getUserMedia({ video: true, audio: true });
@@ -35,6 +40,9 @@
 			localVideoElement.srcObject = new MediaStream(localStream.getVideoTracks());
 		}
 		isReady = true;
+		const resizeObserver = new ResizeObserver(updateLayout);
+
+		resizeObserver.observe(previewContainerElement);
 	});
 
 	onDestroy(() => {
@@ -69,6 +77,7 @@
 	}
 
 	function updateLayout() {
+		console.log('UPDATING LAYOUT');
 		const connectedPeersCount = connectedPeers.length + 1;
 		if (connectedPeersCount == 2 || screenShareActive) {
 			addVideoToFloatingContainer(localVideoElement.parentElement!);
@@ -76,23 +85,29 @@
 		} else if (floatingContainerElement.contains(localVideoElement.parentElement)) {
 			previewContainerElement.appendChild(localVideoElement.parentElement!);
 		}
-		updateVideoContainerSizes(connectedPeersCount);
+		if (!screenShareActive) {
+			updateVideoContainerSizes(connectedPeersCount);
+		}
 	}
 
 	function updateVideoContainerSizes(connectedPeersCount: number) {
-		let videoWidth = previewContainerElement.clientWidth;
-		let videoHeight = previewContainerElement.clientHeight;
+		let videoWidth = previewContainerElement.offsetWidth;
+		let videoHeight = previewContainerElement.offsetHeight;
 		let rowCount = 1,
 			colCount = 1;
 		if (connectedPeersCount > 2) {
 			rowCount = Math.ceil(Math.sqrt(connectedPeersCount));
 			colCount = Math.ceil(connectedPeersCount / rowCount);
-			videoWidth = previewContainerElement.clientWidth / rowCount;
-			videoHeight = previewContainerElement.clientHeight / colCount;
+			videoWidth = previewContainerElement.offsetWidth / rowCount;
+			videoHeight = previewContainerElement.offsetHeight / colCount;
 		}
 		previewContainerElement.querySelectorAll('.video-container').forEach((v) => {
 			(v as HTMLDivElement).style.width = `${videoWidth - 24 * (rowCount - 1)}px`;
 			(v as HTMLDivElement).style.height = `${videoHeight - 24 * (colCount - 1) - 32}px`;
+			v.querySelectorAll('.video-wrapper').forEach((v) => {
+				(v as HTMLDivElement).style.width = `${videoWidth - 24 * (rowCount - 1)}px`;
+				(v as HTMLDivElement).style.height = `${videoHeight - 24 * (colCount - 1) - 32}px`;
+			});
 		});
 	}
 
@@ -101,7 +116,7 @@
 			const { WebsocketSignalingChannel } = await import('$lib/channels/WebsocketSignalingChannel');
 			signalingChannel = new WebsocketSignalingChannel(roomId);
 			peer = new Peer(signalingChannel, localStream);
-			peer.addEventListener('connect', () => {
+			peer.addEventListener('connectionchanged', () => {
 				connectedPeers = peer!.connectedPeers;
 			});
 			peer.addEventListener('error', () => {
@@ -134,6 +149,10 @@
 			peer.addEventListener('unmuted', (event) => {
 				const videoElement = document.getElementById(event.detail);
 				(videoElement?.nextSibling as HTMLDivElement).classList.add('hidden');
+			});
+			peer.addEventListener('chat', (event) => {
+				chatMessages.push(event.detail);
+				chatMessages = chatMessages;
 			});
 		}
 	}
@@ -199,10 +218,7 @@
 	}
 
 	function removeDisplayStream() {
-		const screenVideo: HTMLVideoElement | null = document.getElementById(
-			'screen'
-		) as HTMLVideoElement;
-		screenVideo?.parentElement?.remove();
+		removeVideo('screen');
 		floatingContainerElement
 			.querySelectorAll('.video-container')
 			.forEach((container) => previewContainerElement.appendChild(container));
@@ -236,89 +252,110 @@
 	</div>
 {/if}
 
-<main class="mx-4">
-	<div class="alert absolute bottom-0 left-1/2 z-10 flex w-max -translate-x-1/2 items-center gap-4">
-		<div class="flex gap-2">
-			<p class="my-0 whitespace-nowrap">Meeting ID: {roomId}</p>
-			<CopyTextButton
-				text={browser
-					? window.location.protocol + '//' + window.location.host + `/rooms/${roomId}`
-					: ''}
-			/>
-		</div>
-		<div>
-			<button
-				class="btn btn-circle swap"
-				class:swap-active={videoOn}
-				class:btn-neutral={videoOn}
-				class:btn-error={!videoOn}
-				on:click={() => (videoOn = !videoOn)}
-			>
-				<Icon icon="lucide:video" class="swap-on text-2xl" />
-				<Icon icon="lucide:video-off" class="swap-off text-2xl" />
-			</button>
-			<button
-				class="btn btn-circle swap"
-				class:swap-active={audioOn}
-				class:btn-neutral={audioOn}
-				class:btn-error={!audioOn}
-				on:click={() => (audioOn = !audioOn)}
-			>
-				<Icon icon="lucide:mic" class="swap-on text-2xl" />
-				<Icon icon="lucide:mic-off" class="swap-off text-2xl" />
-			</button>
-			<button
-				class="btn btn-circle swap"
-				class:swap-active={screenShareOn}
-				class:btn-neutral={!screenShareOn}
-				class:btn-accent={screenShareOn}
-				on:click={() => (screenShareOn ? stopCapture() : startCapture())}
-				disabled={screenShareActive && !screenShareOn}
-			>
-				<Icon icon="lucide:screen-share" class="swap-off text-2xl" />
-				<Icon icon="lucide:screen-share-off" class="swap-on text-2xl" />
-			</button>
-		</div>
-		{#if hasError}
-			<button class="btn btn-primary" on:click={() => (window.location.pathname = '/')}>
-				Go to home
-			</button>
-		{:else if !peer && isReady}
-			<button class="btn btn-primary" on:click={connect}>Join meeting</button>
-		{:else if peer}
-			<div class="itemce flex items-center gap-4">
-				<button class="btn btn-error" on:click={leaveMeeting}>Leave meeting</button>
+<SideDrawer show={chatOn}>
+	<div slot="content">
+		<div
+			class="alert absolute bottom-0 left-1/2 z-10 flex h-20 w-max -translate-x-1/2 items-center gap-4"
+		>
+			<div class="flex gap-2">
+				<p class="my-0 whitespace-nowrap">Meeting ID: {roomId}</p>
+				<CopyTextButton
+					text={browser
+						? window.location.protocol + '//' + window.location.host + `/rooms/${roomId}`
+						: ''}
+				/>
 			</div>
+			<div>
+				<button
+					class="btn btn-circle swap"
+					class:swap-active={videoOn}
+					class:btn-neutral={videoOn}
+					class:btn-error={!videoOn}
+					on:click={() => (videoOn = !videoOn)}
+				>
+					<Icon icon="lucide:video" class="swap-on text-2xl" />
+					<Icon icon="lucide:video-off" class="swap-off text-2xl" />
+				</button>
+				<button
+					class="btn btn-circle swap"
+					class:swap-active={audioOn}
+					class:btn-neutral={audioOn}
+					class:btn-error={!audioOn}
+					on:click={() => (audioOn = !audioOn)}
+				>
+					<Icon icon="lucide:mic" class="swap-on text-2xl" />
+					<Icon icon="lucide:mic-off" class="swap-off text-2xl" />
+				</button>
+				{#if peer}
+					<button
+						class="btn btn-circle swap"
+						class:swap-active={screenShareOn}
+						class:btn-neutral={!screenShareOn}
+						class:btn-accent={screenShareOn}
+						on:click={() => (screenShareOn ? stopCapture() : startCapture())}
+						disabled={screenShareActive && !screenShareOn}
+					>
+						<Icon icon="lucide:screen-share" class="swap-off text-2xl" />
+						<Icon icon="lucide:screen-share-off" class="swap-on text-2xl" />
+					</button>
+					<button
+						class="btn btn-circle swap"
+						on:click={() => (chatOn = !chatOn)}
+						class:swap-active={chatOn}
+						class:btn-neutral={!chatOn}
+						class:btn-secondary={chatOn}
+					>
+						<Icon icon="lucide:message-square-text" class="swap-off text-2xl" />
+						<Icon icon="lucide:message-square-off" class="swap-on text-2xl" />
+					</button>
+				{/if}
+			</div>
+			{#if hasError}
+				<button class="btn btn-primary" on:click={() => (window.location.pathname = '/')}>
+					Go to home
+				</button>
+			{:else if !peer && isReady}
+				<button class="btn btn-primary" on:click={connect}>Join meeting</button>
+			{:else if peer}
+				<div class="itemce flex items-center gap-4">
+					<button class="btn btn-error" on:click={leaveMeeting}>Leave meeting</button>
+				</div>
+			{/if}
+		</div>
+		<div class="h-screen w-full items-center" class:flex={screenShareActive}>
+			<div
+				class="preview-container flex h-full w-full flex-wrap items-center justify-center gap-2"
+				bind:this={previewContainerElement}
+			>
+				<div class="video-container">
+					<video
+						class="not-prose"
+						id="localVideo"
+						autoplay
+						playsinline
+						controls={false}
+						bind:this={localVideoElement}
+					>
+						<track kind="captions" />
+					</video>
+				</div>
+			</div>
+			<Draggable
+				initialX={floatingContainerPosition.x + (chatOn ? -384 : 0)}
+				initialY={floatingContainerPosition.y}
+				active={!screenShareActive}
+			>
+				<div
+					id="floating-container"
+					class="join join-vertical border-neutral overflow-hidden border-4"
+					bind:this={floatingContainerElement}
+				></div>
+			</Draggable>
+		</div>
+	</div>
+	<div slot="sidebar" class="h-full">
+		{#if peer}
+			<Chat onSend={peer.sendChatMessage.bind(peer)} bind:messages={chatMessages} />
 		{/if}
 	</div>
-	<div class="items-center" class:flex={screenShareActive}>
-		<div
-			class="preview-container flex h-screen w-full flex-wrap items-center justify-center gap-2 py-4"
-			bind:this={previewContainerElement}
-		>
-			<div class="video-container">
-				<video
-					class="not-prose"
-					id="localVideo"
-					autoplay
-					playsinline
-					controls={false}
-					bind:this={localVideoElement}
-				>
-					<track kind="captions" />
-				</video>
-			</div>
-		</div>
-		<Draggable
-			initialX={floatingContainerPosition.x}
-			initialY={floatingContainerPosition.y}
-			active={!screenShareActive}
-		>
-			<div
-				id="floating-container"
-				class="join join-vertical border-neutral overflow-hidden border-4"
-				bind:this={floatingContainerElement}
-			></div>
-		</Draggable>
-	</div>
-</main>
+</SideDrawer>
