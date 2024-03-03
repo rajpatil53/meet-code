@@ -47,8 +47,10 @@
 
 	$effect(() => {
 		if (audioOn) {
+			peer?.unmuteAudio();
 			localStream?.getAudioTracks().forEach((track) => (track.enabled = true));
 		} else {
+			peer?.muteAudio();
 			localStream?.getAudioTracks().forEach((track) => (track.enabled = false));
 		}
 	});
@@ -124,6 +126,14 @@
 					screenShareStream = null;
 					removeDisplayStream();
 				}
+			});
+			peer.addEventListener('muted', (event) => {
+				const videoElement = document.getElementById(event.detail);
+				(videoElement?.nextSibling as HTMLDivElement).classList.remove('hidden');
+			});
+			peer.addEventListener('unmuted', (event) => {
+				const videoElement = document.getElementById(event.detail);
+				(videoElement?.nextSibling as HTMLDivElement).classList.add('hidden');
 			});
 		}
 	}

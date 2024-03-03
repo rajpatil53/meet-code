@@ -16,6 +16,7 @@ export class PeerConnection {
 	private _iceCandidates: RTCIceCandidate[];
 	private _negotiating: boolean;
 	private _senderMap: Map<MediaStreamTrack, Map<MediaStream, RTCRtpSender>>;
+	private _dataChannel: RTCDataChannel;
 
 	constructor(owner: Peer, peerId: string) {
 		this._senderMap = new Map();
@@ -27,6 +28,41 @@ export class PeerConnection {
 		this.setupConnectionListeners();
 		this.addStream(this._owner.stream);
 		this._negotiating = false;
+		this._dataChannel = this.setupDataChannel();
+	}
+
+	private setupDataChannel() {
+		const dataChannel = this._conn.createDataChannel(this.peerId);
+		this._conn.addEventListener('datachannel', (e) => {
+			console.log('Received data channel:', e);
+			e.channel.addEventListener('open', (e) => console.log('Opened data channel:', e));
+			e.channel.addEventListener('message', this._handleDataMessage.bind(this));
+			e.channel.addEventListener('close', (e) => console.log('close data channel:', e));
+		});
+		dataChannel.addEventListener('open', (e) => {
+			console.log('Opened data channel:', e);
+			this._owner.stream.getAudioTracks().forEach((track) => {
+				if (!track.enabled) {
+					this.sendDataMessage('muteaudio');
+				}
+			});
+		});
+		return dataChannel;
+	}
+
+	private _handleDataMessage(event: MessageEvent) {
+		console.log('message data channel:', event);
+		switch (event.data) {
+			case 'muteaudio':
+				this._owner.handleMuteAudio(this.peerId);
+				break;
+			case 'unmuteaudio':
+				this._owner.handleUnmuteAudio(this.peerId);
+				break;
+			default:
+				console.log('Message not handled:', event);
+				break;
+		}
 	}
 
 	private setupConnectionListeners() {
@@ -155,5 +191,9 @@ export class PeerConnection {
 
 	close() {
 		this._conn.close();
+	}
+
+	sendDataMessage(message: string) {
+		this._dataChannel.send(message);
 	}
 }

@@ -9,6 +9,8 @@ export interface IncomingStream {
 export interface PeerEventMap {
 	streamadded: CustomEvent<IncomingStream>;
 	streamremoved: CustomEvent<IncomingStream>;
+	muted: CustomEvent<string>;
+	unmuted: CustomEvent<string>;
 }
 
 export interface PeerEventTarget extends EventTarget {
@@ -207,5 +209,19 @@ export class Peer extends typedEventTarget {
 		this.dispatchEvent(
 			new CustomEvent<IncomingStream>('streamremoved', { detail: incomingStream })
 		);
+	}
+
+	muteAudio() {
+		Object.values(this._connections).forEach((c) => c.sendDataMessage('muteaudio'));
+	}
+	unmuteAudio() {
+		Object.values(this._connections).forEach((c) => c.sendDataMessage('unmuteaudio'));
+	}
+
+	handleMuteAudio(peerId: string) {
+		this.dispatchEvent(new CustomEvent<string>('muted', { detail: peerId }));
+	}
+	handleUnmuteAudio(peerId: string) {
+		this.dispatchEvent(new CustomEvent<string>('unmuted', { detail: peerId }));
 	}
 }
